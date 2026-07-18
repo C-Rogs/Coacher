@@ -1,0 +1,15 @@
+name = "coach-key-service"
+main = "src/index.ts"
+compatibility_date = "2025-07-01"
+
+# After first deploy setup, replace placeholder with output of:
+#   npx wrangler kv namespace create DEVICE_KEYS
+[[kv_namespaces]]
+binding = "DEVICE_KEYS"
+id = "REPLACE_AFTER_KV_CREATE"
+preview_id = "REPLACE_AFTER_KV_CREATE_PREVIEW"
+
+[vars]
+KEY_LIMIT_USD = "5"
+KEY_LIMIT_RESET = "monthly"
+MAX_DEVICES = "25"

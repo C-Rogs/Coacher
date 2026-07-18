@@ -1,0 +1,3 @@
+# Copy to .dev.vars for local `npm run dev`
+OPENROUTER_MANAGEMENT_KEY=sk-or-v1-your-management-key
+APP_SHARED_SECRET=generate-with-openssl-rand-hex-32
