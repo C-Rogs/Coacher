@@ -8,7 +8,7 @@ Personal tooling for the **Coach** iOS app (not monday.com / corporate).
 |--------|------|
 | [`coach-key-service/`](./coach-key-service/) | Cloudflare Worker that mints capped OpenRouter keys for friends |
 
-iOS app source: `/Users/cameronro/Development/coach`
+iOS app source: [`coach`](https://github.com/C-Rogs/coach) (`/Users/cameronro/Development/coach`)
 
 ## Git
 
