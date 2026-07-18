@@ -8,30 +8,24 @@ Personal Cloudflare Worker for the **Coach** iOS app. Mints capped OpenRouter AP
 
 1. Coach app sends a stable per-device UUID (Keychain).
 2. Worker checks KV for an existing key for that device.
-3. If none, worker calls OpenRouter Management API and stores the new key.
+3. If none, worker mints a key, attaches the **free-model guardrail**, stores the key.
 4. App saves the key in Keychain and talks to OpenRouter directly.
 
-Default cap: **$5 USD / month** per device (configurable in `wrangler.toml`).
+**$0 spend cap** + guardrail allowlist = paid models blocked server-side.
 
-## Cost
+## No server needed
 
-- Cloudflare Workers free tier: enough for friends
-- OpenRouter: you pay usage on keys you mint (free models still route through OpenRouter)
-
-## Quick start
-
-See [DEPLOY.md](./DEPLOY.md) for the full walkthrough.
+Hosted on **Cloudflare Workers** (free tier). Deploy from your Mac; Cloudflare runs it.
 
 ```bash
 cd coach-key-service
-npm install
-cp .dev.vars.example .dev.vars   # add your OpenRouter Management key
-npx wrangler kv namespace create DEVICE_KEYS
-# paste KV id into wrangler.toml
-npm run deploy
-npx wrangler secret put OPENROUTER_MANAGEMENT_KEY
-npx wrangler secret put APP_SHARED_SECRET
+./scripts/deploy-from-mac.sh
 ```
+
+## Cost
+
+- Cloudflare: free tier
+- OpenRouter: **$0** if friends only hit free models (enforced by guardrail)
 
 ## API
 
@@ -58,7 +52,8 @@ Response `201` (new) or `200` (existing device):
 {
   "key": "sk-or-v1-...",
   "provisioned": true,
-  "limit_usd": 5,
+  "free_models_only": true,
+  "limit_usd": 0,
   "limit_reset": "monthly"
 }
 ```
