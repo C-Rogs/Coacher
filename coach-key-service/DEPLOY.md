@@ -1,62 +1,101 @@
 # Deploy coach-key-service (personal / C-Rogs)
 
-This service is **personal infrastructure** for sharing the Coach iOS app with friends. It is not part of monday.com or corporate work.
+**No server needed.** This runs on [Cloudflare Workers](https://workers.cloudflare.com) (free tier). Your Mac only deploys the code; Cloudflare hosts it.
 
-## Prerequisites
+Personal infrastructure for Coach TestFlight friends — not monday.com / corporate.
 
-1. Free [Cloudflare](https://dash.cloudflare.com) account
-2. [OpenRouter](https://openrouter.ai) account with credits (free models still need an account)
-3. OpenRouter **Management API key** (not a normal completion key):
-   - https://openrouter.ai/settings/management-keys
-   - Create key → copy once
+## Fastest path (from this Mac)
 
-## 1. Install dependencies
+```bash
+cd /Users/cameronro/Development/Coacher/coach-key-service
+./scripts/deploy-from-mac.sh
+```
+
+The script will:
+
+1. `wrangler login` (browser — use personal Cloudflare account)
+2. Create KV namespace if needed
+3. Deploy the worker
+4. Prompt for OpenRouter + app secrets
+
+You need an OpenRouter **Management API key** first: https://openrouter.ai/settings/management-keys
+
+App shared secret is already in `.setup-secret.txt` (local, gitignored). Inject into Coach before TestFlight:
+
+```bash
+cd /Users/cameronro/Development/coach
+./scripts/inject-key-service-secret.sh
+```
+
+## What gets enforced (zero cost)
+
+On each new device key the worker:
+
+1. Mints an OpenRouter API key with **`limit: $0`**
+2. Creates/reuses guardrail **`coach-friends-free-only`**
+3. Allowlists only Coach free models (`:free` + `openrouter/free`)
+4. Assigns that guardrail to the minted key
+
+Paid models are blocked server-side even if someone extracts the key.
+
+Free model list lives in `src/models.ts` — keep in sync with `coach/Coach/Models/OpenRouterModel.swift`.
+
+## Manual steps (if you prefer)
+
+### 1. Install
 
 ```bash
 cd /Users/cameronro/Development/Coacher/coach-key-service
 npm install
 ```
 
-## 2. Create KV namespace
+### 2. Cloudflare login
+
+```bash
+npx wrangler login
+```
+
+### 3. KV namespace
 
 ```bash
 npx wrangler kv namespace create DEVICE_KEYS
 npx wrangler kv namespace create DEVICE_KEYS --preview
 ```
 
-Copy both IDs into `wrangler.toml` under `[[kv_namespaces]]`:
+Paste IDs into `wrangler.toml`.
 
-- `id` = production namespace id
-- `preview_id` = preview namespace id
-
-## 3. Generate the app shared secret (one time)
+### 4. Deploy + secrets
 
 ```bash
-openssl rand -hex 32
+npm run deploy
+npx wrangler secret put OPENROUTER_MANAGEMENT_KEY
+npx wrangler secret put APP_SHARED_SECRET   # from .setup-secret.txt
 ```
 
-Use the same value in:
+### 5. Wire Coach app
 
-1. `coach-key-service/.dev.vars` as `APP_SHARED_SECRET` (local dev)
-2. `npx wrangler secret put APP_SHARED_SECRET` (production)
-3. `Coach/Services/CoachKeyServiceConfig.swift` → `appSharedSecret` in the Coach app
+Edit `coach/Coach/Services/CoachKeyServiceConfig.swift`:
 
-## 4. Local dev (optional)
-
-```bash
-cp .dev.vars.example .dev.vars
+```swift
+static let baseURLString = "https://coach-key-service.<your-subdomain>.workers.dev"
 ```
 
-Edit `.dev.vars`:
+Then inject secret + archive for TestFlight.
 
-- `OPENROUTER_MANAGEMENT_KEY` = your management key
-- `APP_SHARED_SECRET` = must match `CoachKeyServiceConfig.swift` in the Coach app
+## Config (`wrangler.toml`)
+
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `KEY_LIMIT_USD` | `0` | Per-key spend cap (backup to guardrail) |
+| `KEY_LIMIT_RESET` | `monthly` | OpenRouter limit reset |
+| `MAX_DEVICES` | `25` | Max friend devices |
+
+## Test locally
 
 ```bash
+cp .dev.vars.example .dev.vars   # add management key + shared secret
 npm run dev
 ```
-
-Test:
 
 ```bash
 curl -s http://127.0.0.1:8787/health
@@ -66,70 +105,8 @@ curl -s -X POST http://127.0.0.1:8787/v1/provision \
   -d '{"device_id":"550e8400-e29b-41d4-a716-446655440000"}'
 ```
 
-## 5. Log in to Cloudflare
-
-```bash
-npx wrangler login
-```
-
-Uses your personal Cloudflare account (not monday).
-
-## 6. Deploy
-
-```bash
-npm run deploy
-```
-
-Note the worker URL, e.g. `https://coach-key-service.<your-subdomain>.workers.dev`
-
-## 7. Set production secrets
-
-Never commit these:
-
-```bash
-npx wrangler secret put OPENROUTER_MANAGEMENT_KEY
-npx wrangler secret put APP_SHARED_SECRET
-```
-
-Paste the same `APP_SHARED_SECRET` value that is in the Coach app config.
-
-## 8. Wire the Coach app
-
-In `/Users/cameronro/Development/coach/Coach/Services/CoachKeyServiceConfig.swift`:
-
-```swift
-static let baseURLString = "https://coach-key-service.<your-subdomain>.workers.dev"
-```
-
-Rebuild Coach (Release / TestFlight). On first launch, the app auto-provisions an OpenRouter key.
-
-## 9. Tune limits (optional)
-
-Edit `wrangler.toml` `[vars]`:
-
-| Var | Default | Meaning |
-|-----|---------|---------|
-| `KEY_LIMIT_USD` | `5` | Monthly spend cap per friend device |
-| `KEY_LIMIT_RESET` | `monthly` | OpenRouter limit reset |
-| `MAX_DEVICES` | `25` | Max distinct devices that can provision |
-
-Redeploy after changes: `npm run deploy`
-
-## Updating later
-
-1. Edit `src/index.ts` or `wrangler.toml`
-2. `npm run deploy`
-3. No app update needed unless you change `APP_SHARED_SECRET` or the worker URL
-
-## Rotating secrets
-
-```bash
-npx wrangler secret put APP_SHARED_SECRET
-```
-
-Update `CoachKeyServiceConfig.swift` with the new secret and ship a new TestFlight build.
-
 ## Monitoring
 
-- Cloudflare dashboard → Workers → `coach-key-service` → Metrics
-- OpenRouter dashboard → API keys → filter `coach-friend-*`
+- Cloudflare → Workers → `coach-key-service`
+- OpenRouter → API keys → `coach-friend-*`
+- OpenRouter → Guardrails → `coach-friends-free-only`

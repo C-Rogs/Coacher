@@ -1,3 +1,9 @@
+import {
+  assignKeyToGuardrail,
+  ensureFreeOnlyGuardrail,
+  mintOpenRouterKey,
+} from "./openrouter";
+
 export interface Env {
   DEVICE_KEYS: KVNamespace;
   OPENROUTER_MANAGEMENT_KEY: string;
@@ -15,17 +21,7 @@ interface StoredDeviceKey {
   key: string;
   created_at: string;
   name: string;
-}
-
-interface OpenRouterCreateKeyResponse {
-  key?: string;
-  data?: {
-    hash?: string;
-    name?: string;
-  };
-  error?: {
-    message?: string;
-  };
+  key_hash: string;
 }
 
 const DEVICE_ID_PATTERN =
@@ -38,7 +34,11 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "coach-key-service" });
+      return json({
+        ok: true,
+        service: "coach-key-service",
+        free_models_only: true,
+      });
     }
 
     if (request.method === "POST" && url.pathname === "/v1/provision") {
@@ -72,6 +72,7 @@ async function handleProvision(request: Request, env: Env): Promise<Response> {
     return json({
       key: existing.key,
       provisioned: false,
+      free_models_only: true,
       limit_usd: parseLimit(env.KEY_LIMIT_USD),
       limit_reset: env.KEY_LIMIT_RESET ?? "monthly",
     });
@@ -86,32 +87,52 @@ async function handleProvision(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  const minted = await mintOpenRouterKey(deviceId, env);
-  if (!minted.ok) {
-    return json({ error: minted.error, detail: minted.detail }, minted.status);
-  }
+  try {
+    const guardrailId = await ensureFreeOnlyGuardrail(
+      env.OPENROUTER_MANAGEMENT_KEY,
+      env.DEVICE_KEYS,
+    );
 
-  const record: StoredDeviceKey = {
-    key: minted.key,
-    created_at: new Date().toISOString(),
-    name: minted.name,
-  };
+    const minted = await mintOpenRouterKey(
+      deviceId,
+      env.OPENROUTER_MANAGEMENT_KEY,
+      parseLimit(env.KEY_LIMIT_USD),
+      env.KEY_LIMIT_RESET ?? "monthly",
+    );
 
-  await env.DEVICE_KEYS.put(kvKey, JSON.stringify(record));
+    await assignKeyToGuardrail(
+      guardrailId,
+      minted.hash,
+      env.OPENROUTER_MANAGEMENT_KEY,
+    );
 
-  const countRaw = await env.DEVICE_KEYS.get(META_DEVICE_COUNT_KEY);
-  const nextCount = (countRaw ? parseInt(countRaw, 10) : 0) + 1;
-  await env.DEVICE_KEYS.put(META_DEVICE_COUNT_KEY, String(nextCount));
-
-  return json(
-    {
+    const record: StoredDeviceKey = {
       key: minted.key,
-      provisioned: true,
-      limit_usd: parseLimit(env.KEY_LIMIT_USD),
-      limit_reset: env.KEY_LIMIT_RESET ?? "monthly",
-    },
-    201,
-  );
+      created_at: new Date().toISOString(),
+      name: minted.name,
+      key_hash: minted.hash,
+    };
+
+    await env.DEVICE_KEYS.put(kvKey, JSON.stringify(record));
+
+    const countRaw = await env.DEVICE_KEYS.get(META_DEVICE_COUNT_KEY);
+    const nextCount = (countRaw ? parseInt(countRaw, 10) : 0) + 1;
+    await env.DEVICE_KEYS.put(META_DEVICE_COUNT_KEY, String(nextCount));
+
+    return json(
+      {
+        key: minted.key,
+        provisioned: true,
+        free_models_only: true,
+        limit_usd: parseLimit(env.KEY_LIMIT_USD),
+        limit_reset: env.KEY_LIMIT_RESET ?? "monthly",
+      },
+      201,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "provision failed";
+    return json({ error: "provision_failed", detail: message }, 502);
+  }
 }
 
 function isAuthorized(request: Request, env: Env): boolean {
@@ -132,56 +153,8 @@ function timingSafeEqual(left: string, right: string): boolean {
 }
 
 function parseLimit(raw: string | undefined): number {
-  const parsed = parseFloat(raw ?? "5");
-  return Number.isFinite(parsed) ? parsed : 5;
-}
-
-async function mintOpenRouterKey(
-  deviceId: string,
-  env: Env,
-): Promise<
-  | { ok: true; key: string; name: string }
-  | { ok: false; error: string; detail?: string; status: number }
-> {
-  const shortId = deviceId.slice(0, 8);
-  const name = `coach-friend-${shortId}`;
-  const limit = parseLimit(env.KEY_LIMIT_USD);
-  const limitReset = env.KEY_LIMIT_RESET ?? "monthly";
-
-  const response = await fetch("https://openrouter.ai/api/v1/keys", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENROUTER_MANAGEMENT_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      name,
-      limit,
-      limit_reset: limitReset,
-      include_byok_in_limit: false,
-    }),
-  });
-
-  const payload = (await response.json()) as OpenRouterCreateKeyResponse;
-
-  if (!response.ok) {
-    return {
-      ok: false,
-      error: "openrouter_mint_failed",
-      detail: payload.error?.message ?? `HTTP ${response.status}`,
-      status: 502,
-    };
-  }
-
-  if (!payload.key) {
-    return {
-      ok: false,
-      error: "openrouter_missing_key",
-      status: 502,
-    };
-  }
-
-  return { ok: true, key: payload.key, name };
+  const parsed = parseFloat(raw ?? "0");
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function json(body: unknown, status = 200): Response {
