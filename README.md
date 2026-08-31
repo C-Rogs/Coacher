@@ -2,14 +2,14 @@
 
 Cloudflare Worker that mints capped OpenRouter keys for friends on the Coach iOS app. Coach sends a device UUID. The Worker returns a key with a $0 spend cap and a guardrail that only allows free models. Paid models stay blocked if someone extracts the key from the phone.
 
-This repo is the Worker. The iOS app is [coach](https://github.com/C-Rogs/coach). Helm is a different product; it does not use this minting path in v1.
+The iOS app lives in a sibling repo (`coach`). Helm v1 does not call this Worker.
 
 ## What it does
 
 1. Coach sends `POST /v1/provision` with a Keychain device id and `Authorization: Bearer <APP_SHARED_SECRET>`.
 2. Worker reads `device:{uuid}` from KV.
 3. Already minted: return that key. New device: mint, attach guardrail `coach-friends-free-only`, store, return 201.
-4. Coach talks to OpenRouter directly after that. This Worker is not a proxy.
+4. Coach talks to OpenRouter directly after that.
 
 `GET /health` is the liveness check. Other paths are 404.
 
@@ -17,9 +17,9 @@ Defaults in `coach-key-service/wrangler.toml`: `$0` per key, monthly reset, 25 d
 
 ## Precedent
 
-Giving friends a personal OpenRouter key is how a 70B call lands on your bill. The Management API plus a guardrail is the cheaper control plane: they do not create an account, you do not pay, as long as they only hit `:free` models.
+Giving friends a personal OpenRouter key is how a 70B call lands on your bill. The Management API plus a guardrail means they do not create an account and you do not pay, as long as they only hit `:free` models.
 
-The shared secret is compiled into the iOS binary. Fine for a friends TestFlight. Rotate the secret and redeploy if that IPA leaks. An App Store build would need a real user session, not a baked token.
+The shared secret is compiled into the iOS binary. Fine for a friends TestFlight. Rotate the secret and redeploy if that IPA leaks. An App Store build would need a user session.
 
 ## Building blocks
 

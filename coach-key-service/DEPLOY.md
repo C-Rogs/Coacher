@@ -1,8 +1,8 @@
 # Deploy coach-key-service (personal / C-Rogs)
 
-**No server needed.** This runs on [Cloudflare Workers](https://workers.cloudflare.com) (free tier). Your Mac only deploys the code; Cloudflare hosts it.
+Runs on [Cloudflare Workers](https://workers.cloudflare.com) free tier. Your Mac deploys; Cloudflare hosts.
 
-Personal infrastructure for Coach TestFlight friends — not monday.com / corporate.
+Personal Cloudflare account for Coach TestFlight friends.
 
 ## Fastest path (from this Mac)
 
@@ -13,12 +13,12 @@ cd /Users/cameronro/Development/Coacher/coach-key-service
 
 The script will:
 
-1. `wrangler login` (browser — use personal Cloudflare account)
+1. `wrangler login` (browser; use personal Cloudflare account)
 2. Create KV namespace if needed
 3. Deploy the worker
 4. Prompt for OpenRouter + app secrets
 
-You need an OpenRouter **Management API key** first: https://openrouter.ai/settings/management-keys
+You need an OpenRouter Management API key first: https://openrouter.ai/settings/management-keys
 
 App shared secret is already in `.setup-secret.txt` (local, gitignored). Inject into Coach before TestFlight:
 
@@ -31,14 +31,14 @@ cd /Users/cameronro/Development/coach
 
 On each new device key the worker:
 
-1. Mints an OpenRouter API key with **`limit: $0`**
-2. Creates/reuses guardrail **`coach-friends-free-only`**
+1. Mints an OpenRouter API key with `limit: $0`
+2. Creates/reuses guardrail `coach-friends-free-only`
 3. Allowlists only Coach free models (`:free` + `openrouter/free`)
 4. Assigns that guardrail to the minted key
 
 Paid models are blocked server-side even if someone extracts the key.
 
-Free model list lives in `src/models.ts` — keep in sync with `coach/Coach/Models/OpenRouterModel.swift`.
+Free model list lives in `src/models.ts`. Keep it in sync with `coach/Coach/Models/OpenRouterModel.swift`.
 
 ## Manual steps (if you prefer)
 
